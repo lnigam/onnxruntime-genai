@@ -1285,12 +1285,16 @@ std::string Model::CompileModel(OrtEnv& ort_env, const std::string& model_filena
   
   // Check if compilation is enabled for the specified model
   if (!compile_options.has_value()) {
-    return model_filename;  // No compile options provided, use original model
+    // No compile options provided, return full path to original model
+    fs::path full_path = config_->config_path / model_filename;
+    return full_path.string();
   }
   
   const auto& comp_opts = compile_options.value();
   if (!comp_opts.enable_ep_context.has_value() || !comp_opts.enable_ep_context.value()) {
-    return model_filename;  // Compilation not enabled, use original model
+    // Compilation not enabled, return full path to original model
+    fs::path full_path = config_->config_path / model_filename;
+    return full_path.string();
   }
   
   // Helper lambda to configure and compile a model
@@ -1298,17 +1302,23 @@ std::string Model::CompileModel(OrtEnv& ort_env, const std::string& model_filena
                                                 const std::string& model_filename,
                                                 const std::optional<Config::CompileOptions>& config_compilation_options) -> std::string {
     if (!compilation_options) {
-      return model_filename;
+      // Return full path to original model
+      fs::path full_path = config_->config_path / model_filename;
+      return full_path.string();
     }
     
     // Check if compilation is enabled for this specific model
     if (!config_compilation_options.has_value()) {
-      return model_filename;  // No compile options, use original model
+      // No compile options, return full path to original model
+      fs::path full_path = config_->config_path / model_filename;
+      return full_path.string();
     }
     
     const auto& comp_opts = config_compilation_options.value();
     if (!comp_opts.enable_ep_context.has_value() || !comp_opts.enable_ep_context.value()) {
-      return model_filename;  // Compilation not enabled, use original model
+      // Compilation not enabled, return full path to original model
+      fs::path full_path = config_->config_path / model_filename;
+      return full_path.string();
     }
     
     // Check if compiled model already exists and is valid
@@ -1401,7 +1411,11 @@ std::string Model::CompileModel(OrtEnv& ort_env, const std::string& model_filena
   return main_model_path;
 }
 
-std::unique_ptr<OrtSession> Model::CreateSession(OrtEnv& ort_env, const std::string& model_filename, OrtSessionOptions* session_options) {
+std::unique_ptr<OrtSession> Model::CreateSession(OrtEnv& ort_env, const std::string& model_path, OrtSessionOptions* session_options) {
+
+  // Extract just the filename from the path for model_data_spans lookup
+  fs::path path_obj(model_path);
+  std::string model_filename = path_obj.filename();
 
   if (auto model_data_it = config_->model_data_spans_.find(model_filename);
       model_data_it != config_->model_data_spans_.end()) {
@@ -1427,7 +1441,7 @@ std::unique_ptr<OrtSession> Model::CreateSession(OrtEnv& ort_env, const std::str
   }
 
   // Otherwise, load the model from the file system
-  return OrtSession::Create(ort_env, fs::path(model_filename).c_str(), session_options);
+  return OrtSession::Create(ort_env, fs::path(model_path).c_str(), session_options);
 }
 
 std::shared_ptr<Tokenizer> Model::CreateTokenizer() const {

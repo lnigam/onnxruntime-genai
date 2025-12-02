@@ -136,6 +136,14 @@ class path {
     return path(path_.substr(0, pos));
   }
 
+  std::string filename() const {
+    size_t pos = path_.find_last_of("/\\");
+    if (pos == std::string::npos) {
+      return path_;  // No separator found, entire path is the filename
+    }
+    return path_.substr(pos + 1);
+  }
+
  private:
   std::string path_;
 
