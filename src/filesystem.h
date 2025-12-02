@@ -22,6 +22,11 @@
 #include <string>
 #include <fstream>
 
+#ifndef _WIN32
+#include <sys/types.h>
+#include <errno.h>
+#endif
+
 namespace fs {
 
 class path {
@@ -71,7 +76,7 @@ class path {
     return join(path);
   }
 
-  path operator/(const path& path) {
+  path operator/(const path& path) const {
     return join(path.path_);
   }
 
@@ -176,6 +181,42 @@ class path {
 // Namespace-level functions
 inline bool exists(const path& p) {
   return p.exists();
+}
+
+inline bool create_directories(const path& p) {
+#ifdef _WIN32
+  // On Windows, create directory recursively using CreateDirectoryW
+  if (p.exists()) {
+    return true;  // Already exists
+  }
+  
+  // First create parent directory if needed
+  path parent = p.parent_path();
+  if (!parent.string().empty() && !parent.exists()) {
+    if (!create_directories(parent)) {
+      return false;
+    }
+  }
+  
+  // Create the directory
+  return CreateDirectoryW(p.c_str(), nullptr) != 0 || GetLastError() == ERROR_ALREADY_EXISTS;
+#else
+  // On Unix-like systems, use mkdir with recursive creation
+  if (p.exists()) {
+    return true;  // Already exists
+  }
+  
+  // First create parent directory if needed
+  path parent = p.parent_path();
+  if (!parent.string().empty() && !parent.exists()) {
+    if (!create_directories(parent)) {
+      return false;
+    }
+  }
+  
+  // Create the directory with 0755 permissions
+  return mkdir(p.c_str(), 0755) == 0 || errno == EEXIST;
+#endif
 }
 
 }  // namespace fs

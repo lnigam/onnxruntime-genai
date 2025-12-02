@@ -227,6 +227,35 @@ struct RunOptions_Element : JSON::Element {
   Config::RunOptions& v_;
 };
 
+struct CompileOptions_Element : JSON::Element {
+  explicit CompileOptions_Element(Config::CompileOptions& v) : v_{v} {}
+
+  void OnValue(std::string_view name, JSON::Value value) override {
+    if (name == "enable_ep_context") {
+      v_.enable_ep_context = JSON::Get<bool>(value);
+    } else if (name == "graph_optimization_level") {
+      v_.graph_optimization_level = static_cast<GraphOptimizationLevel>(JSON::Get<double>(value));
+    } else if (name == "ep_context_file_path") {
+      v_.ep_context_file_path = JSON::Get<std::string_view>(value);
+    } else if (name == "ep_context_model_name") {
+      v_.ep_context_model_name = JSON::Get<std::string_view>(value);
+    } else if (name == "ep_context_embed_mode") {
+      v_.ep_context_embed_mode = JSON::Get<bool>(value);
+    } else if (name == "flags") {
+      v_.flags = static_cast<uint32_t>(JSON::Get<double>(value));
+    } else if (name == "external_initializers_file_path") {
+      v_.external_initializers_file_path = JSON::Get<std::string_view>(value);
+    } else if (name == "external_initializers_size_threshold") {
+      v_.external_initializers_size_threshold = static_cast<size_t>(JSON::Get<double>(value));
+    } else {
+      throw JSON::unknown_value_error{};
+    }
+  }
+
+ private:
+  Config::CompileOptions& v_;
+};
+
 struct EncoderInputs_Element : JSON::Element {
   explicit EncoderInputs_Element(Config::Model::Encoder::Inputs& v) : v_{v} {}
 
@@ -412,6 +441,11 @@ struct PipelineModel_Element : JSON::Element {
       run_options_ = std::make_unique<RunOptions_Element>(*v_.run_options);
       return *run_options_;
     }
+    if (name == "compile_options") {
+      v_.compile_options = Config::CompileOptions{};
+      compile_options_ = std::make_unique<CompileOptions_Element>(*v_.compile_options);
+      return *compile_options_;
+    }
     if (name == "output_names_forwarder") {
       return output_names_forwarder_;
     }
@@ -431,6 +465,7 @@ struct PipelineModel_Element : JSON::Element {
   Config::Model::Decoder::PipelineModel& v_;
   std::unique_ptr<SessionOptions_Element> session_options_;
   std::unique_ptr<RunOptions_Element> run_options_;
+  std::unique_ptr<CompileOptions_Element> compile_options_;
   StringArray_Element inputs_{v_.inputs};
   StringArray_Element outputs_{v_.outputs};
   StringStringMap_Element output_names_forwarder_{v_.output_names_forwarder};
@@ -530,6 +565,11 @@ struct Encoder_Element : JSON::Element {
       run_options_ = std::make_unique<RunOptions_Element>(*v_.run_options);
       return *run_options_;
     }
+    if (name == "compile_options") {
+      v_.compile_options = Config::CompileOptions{};
+      compile_options_ = std::make_unique<CompileOptions_Element>(*v_.compile_options);
+      return *compile_options_;
+    }
     if (name == "inputs") {
       return inputs_;
     }
@@ -543,6 +583,7 @@ struct Encoder_Element : JSON::Element {
   Config::Model::Encoder& v_;
   std::unique_ptr<SessionOptions_Element> session_options_;
   std::unique_ptr<RunOptions_Element> run_options_;
+  std::unique_ptr<CompileOptions_Element> compile_options_;
   EncoderInputs_Element inputs_{v_.inputs};
   EncoderOutputs_Element outputs_{v_.outputs};
 };
@@ -577,6 +618,11 @@ struct Decoder_Element : JSON::Element {
       run_options_ = std::make_unique<RunOptions_Element>(*v_.run_options);
       return *run_options_;
     }
+    if (name == "compile_options") {
+      v_.compile_options = Config::CompileOptions{};
+      compile_options_ = std::make_unique<CompileOptions_Element>(*v_.compile_options);
+      return *compile_options_;
+    }
     if (name == "inputs") {
       return inputs_;
     }
@@ -606,6 +652,7 @@ struct Decoder_Element : JSON::Element {
   Config::Model::Decoder& v_;
   SessionOptions_Element session_options_{v_.session_options};
   std::unique_ptr<RunOptions_Element> run_options_;
+  std::unique_ptr<CompileOptions_Element> compile_options_;
   DecoderInputs_Element inputs_{v_.inputs};
   DecoderOutputs_Element outputs_{v_.outputs};
   Pipeline_Element pipeline_{v_.pipeline};
@@ -750,6 +797,11 @@ struct Vision_Element : JSON::Element {
       run_options_ = std::make_unique<RunOptions_Element>(*v_.run_options);
       return *run_options_;
     }
+    if (name == "compile_options") {
+      v_.compile_options = Config::CompileOptions{};
+      compile_options_ = std::make_unique<CompileOptions_Element>(*v_.compile_options);
+      return *compile_options_;
+    }
     if (name == "inputs") {
       return inputs_;
     }
@@ -775,6 +827,7 @@ struct Vision_Element : JSON::Element {
   Config::Model::Vision& v_;
   std::unique_ptr<SessionOptions_Element> session_options_;
   std::unique_ptr<RunOptions_Element> run_options_;
+  std::unique_ptr<CompileOptions_Element> compile_options_;
   VisionInputs_Element inputs_{v_.inputs};
   VisionOutputs_Element outputs_{v_.outputs};
   VisionPipeline_Element pipeline_element_{v_.pipeline};
@@ -843,6 +896,11 @@ struct Speech_Element : JSON::Element {
       run_options_ = std::make_unique<RunOptions_Element>(*v_.run_options);
       return *run_options_;
     }
+    if (name == "compile_options") {
+      v_.compile_options = Config::CompileOptions{};
+      compile_options_ = std::make_unique<CompileOptions_Element>(*v_.compile_options);
+      return *compile_options_;
+    }
     if (name == "inputs") {
       return inputs_;
     }
@@ -856,6 +914,7 @@ struct Speech_Element : JSON::Element {
   Config::Model::Speech& v_;
   std::unique_ptr<SessionOptions_Element> session_options_;
   std::unique_ptr<RunOptions_Element> run_options_;
+  std::unique_ptr<CompileOptions_Element> compile_options_;
   SpeechInputs_Element inputs_{v_.inputs};
   SpeechOutputs_Element outputs_{v_.outputs};
 };
@@ -916,6 +975,11 @@ struct Embedding_Element : JSON::Element {
       run_options_ = std::make_unique<RunOptions_Element>(*v_.run_options);
       return *run_options_;
     }
+    if (name == "compile_options") {
+      v_.compile_options = Config::CompileOptions{};
+      compile_options_ = std::make_unique<CompileOptions_Element>(*v_.compile_options);
+      return *compile_options_;
+    }
     if (name == "inputs") {
       return inputs_;
     }
@@ -929,6 +993,7 @@ struct Embedding_Element : JSON::Element {
   Config::Model::Embedding& v_;
   std::unique_ptr<SessionOptions_Element> session_options_;
   std::unique_ptr<RunOptions_Element> run_options_;
+  std::unique_ptr<CompileOptions_Element> compile_options_;
   EmbeddingInputs_Element inputs_{v_.inputs};
   EmbeddingOutputs_Element outputs_{v_.outputs};
 };

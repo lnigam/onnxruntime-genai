@@ -12,7 +12,12 @@ namespace Generators {
 DecoderOnlyPipelineModel::DecoderOnlyPipelineModel(std::unique_ptr<Config> config, OrtEnv& ort_env)
     : Model{std::move(config)}, ort_env_{ort_env} {
   for (const auto& model : config_->model.decoder.pipeline) {
-    sessions_.emplace_back(CreateSession(ort_env, model.filename, GetSessionOptions(model.model_id)));
+    // Get the compiled model path if it was compiled, otherwise use original filename
+    std::string model_path = GetPipelineCompiledModelPath(model.model_id);
+    if (model_path.empty()) {
+      model_path = model.filename;  // Use original filename if not compiled
+    }
+    sessions_.emplace_back(CreateSession(ort_env, model_path, GetSessionOptions(model.model_id)));
   }
 
   for (auto& session : sessions_) {

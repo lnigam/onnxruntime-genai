@@ -3,6 +3,7 @@
 //
 // Modifications Copyright(C) 2024-2026 Advanced Micro Devices, Inc. All rights reserved.
 #include <algorithm>
+#include <cctype>
 #include <climits>
 #include <random>
 #include <set>
@@ -1014,7 +1015,7 @@ std::vector<const char*> SessionInfo::GetOutputSymbolicShape(const std::string& 
 }
 
 Model::Model(std::unique_ptr<Config> config) : config_{std::move(config)} {
-  CreateSessionOptions();
+  CreateSessionOptions();  
   EnsureDeviceOrtInit(*p_device_, *config_, arena_cfg_);
 
   // Only CUDA, TRT-RTX, RyzenAI and DML does every input on the device
@@ -1213,7 +1214,195 @@ OrtSessionOptions* Model::GetSessionOptions(const std::string& model_id) const {
   return session_options_.get();
 }
 
+std::string Model::GetPipelineCompiledModelPath(const std::string& model_id) const {
+  auto it = pipeline_compiled_model_paths_.find(model_id);
+  if (it != pipeline_compiled_model_paths_.end()) {
+    return it->second;
+  }
+  return "";  // Return empty string if not found
+}
+
+std::unique_ptr<OrtModelCompilationOptions> Model::CreateModelCompilationOptions(OrtEnv& ort_env, OrtSessionOptions* session_options) {
+  // Create model compilation options from the provided session options
+  if (!session_options) {
+    return nullptr;
+  }
+  
+  OrtModelCompilationOptions* p;
+  Ort::ThrowOnError(Ort::GetCompileApi().CreateModelCompilationOptionsFromSessionOptions(&ort_env, session_options, &p));
+  return std::unique_ptr<OrtModelCompilationOptions>(p);
+}
+
+bool Model::ValidateCompiledModel(const fs::path& compiled_model_path) {
+  // TODO: Implement actual validation logic
+  // For now, always return true if file exists
+  return true;
+}
+
+bool Model::CheckCompiledModelExists(const std::string& model_filename, 
+                                      const Config::CompileOptions& compile_options,
+                                      fs::path& out_compiled_model_path) {
+  // Get output directory (default: "contexts")
+  std::string output_dir = "contexts";
+  if (compile_options.ep_context_file_path.has_value() && !compile_options.ep_context_file_path.value().empty()) {
+    output_dir = compile_options.ep_context_file_path.value();
+  }
+  fs::path output_directory = config_->config_path / output_dir;
+  
+  // Get output filename (default: {model_name}_{ep_name}_ctx.onnx)
+  std::string output_filename;
+  if (compile_options.ep_context_model_name.has_value() && !compile_options.ep_context_model_name.value().empty()) {
+    output_filename = compile_options.ep_context_model_name.value();
+  } else {
+    // Extract model name without extension
+    std::string model_name = model_filename;
+    size_t ext_pos = model_name.find_last_of('.');
+    if (ext_pos != std::string::npos) {
+      model_name = model_name.substr(0, ext_pos);
+    }
+    
+    // Build output filename: {model_name}_{ep_name}_ctx.onnx
+    std::string ep_name = to_string(p_device_->GetType());
+    std::transform(ep_name.begin(), ep_name.end(), ep_name.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    output_filename = model_name + "_" + ep_name + "_ctx.onnx";
+  }
+  
+  // Combine directory and filename
+  out_compiled_model_path = output_directory / output_filename;
+  
+  // Check if the compiled model file exists
+  if (!fs::exists(out_compiled_model_path)) {
+    return false;  // File doesn't exist, need to compile
+  }
+  
+  // Validate the compiled model
+  return ValidateCompiledModel(out_compiled_model_path);
+}
+
+std::string Model::CompileModel(OrtEnv& ort_env, const std::string& model_filename, OrtSessionOptions* session_options, 
+                                bool is_primary_session_option, const std::optional<Config::CompileOptions>& compile_options) {
+  
+  // Check if compilation is enabled for the specified model
+  if (!compile_options.has_value()) {
+    return model_filename;  // No compile options provided, use original model
+  }
+  
+  const auto& comp_opts = compile_options.value();
+  if (!comp_opts.enable_ep_context.has_value() || !comp_opts.enable_ep_context.value()) {
+    return model_filename;  // Compilation not enabled, use original model
+  }
+  
+  // Helper lambda to configure and compile a model
+  auto compile_model_helper = [this, &ort_env](OrtModelCompilationOptions* compilation_options, 
+                                                const std::string& model_filename,
+                                                const std::optional<Config::CompileOptions>& config_compilation_options) -> std::string {
+    if (!compilation_options) {
+      return model_filename;
+    }
+    
+    // Check if compilation is enabled for this specific model
+    if (!config_compilation_options.has_value()) {
+      return model_filename;  // No compile options, use original model
+    }
+    
+    const auto& comp_opts = config_compilation_options.value();
+    if (!comp_opts.enable_ep_context.has_value() || !comp_opts.enable_ep_context.value()) {
+      return model_filename;  // Compilation not enabled, use original model
+    }
+    
+    // Check if compiled model already exists and is valid
+    fs::path compiled_model_path;
+    if (CheckCompiledModelExists(model_filename, comp_opts, compiled_model_path)) {
+      // Compiled model exists and is valid, return compiled path
+      return compiled_model_path.string();
+    }
+
+    // Set input model (from buffer if available, otherwise from file)
+    if (auto model_data_it = config_->model_data_spans_.find(model_filename);
+        model_data_it != config_->model_data_spans_.end()) {
+      // Compile from buffer
+      if (model_data_it->second.empty()) {
+        throw std::runtime_error("Failed to load model data from memory for " + model_filename);
+      }
+      compilation_options->SetInputModelFromBuffer(
+          model_data_it->second.data(), 
+          model_data_it->second.size());
+    } else {
+      // Compile from file
+      fs::path input_path = config_->config_path / model_filename;
+      compilation_options->SetInputModelPath(input_path.c_str());
+    }
+
+    // Set output model path - use the path from CheckCompiledModelExists
+    // Ensure the output directory exists
+    fs::path output_dir = compiled_model_path.parent_path();
+    if (!fs::exists(output_dir)) {
+      if (!fs::create_directories(output_dir)) {
+        throw std::runtime_error("Failed to create output directory: " + output_dir.string());
+      }
+    }
+    
+    compilation_options->SetOutputModelPath(compiled_model_path.c_str());
+    
+    // Apply configuration options from config
+    // Set graph optimization level
+    if (comp_opts.graph_optimization_level.has_value()) {
+      compilation_options->SetGraphOptimizationLevel(comp_opts.graph_optimization_level.value());
+    }
+
+    // Set EP context embed mode
+    if (comp_opts.ep_context_embed_mode.has_value()) {
+      compilation_options->SetEpContextEmbedMode(comp_opts.ep_context_embed_mode.value());
+    }
+
+    // Set flags
+    if (comp_opts.flags.has_value()) {
+      compilation_options->SetFlags(comp_opts.flags.value());
+    }
+
+    // Set external initializers file
+    if (comp_opts.external_initializers_file_path.has_value() && 
+        comp_opts.external_initializers_size_threshold.has_value()) {
+      fs::path external_init_path = config_->config_path / comp_opts.external_initializers_file_path.value();
+      compilation_options->SetOutputModelExternalInitializersFile(
+          external_init_path.c_str(),
+          comp_opts.external_initializers_size_threshold.value());
+    }
+
+    // Compile the model
+    Ort::CompileModel(ort_env, *compilation_options);
+    
+    // Return the compiled model path
+    return compiled_model_path.string();
+  };
+
+  // Compile the specified model with the provided compile_options
+  auto compilation_options = CreateModelCompilationOptions(ort_env, session_options);
+  std::string main_model_path = compile_model_helper(compilation_options.get(), model_filename, compile_options);
+
+  // Additionally, compile all pipeline models if this is the primary session option
+  if (is_primary_session_option) {
+    for (auto& pipeline_model : config_->model.decoder.pipeline) {
+      auto session_options_it = pipeline_session_options_.find(pipeline_model.model_id);
+      if (session_options_it != pipeline_session_options_.end()) {
+        auto pipeline_compile_options = CreateModelCompilationOptions(ort_env, session_options_it->second.get());
+        if (pipeline_compile_options) {
+          std::string pipeline_model_path = compile_model_helper(pipeline_compile_options.get(), 
+                                                                  pipeline_model.filename,
+                                                                  pipeline_model.compile_options);
+          pipeline_compiled_model_paths_[pipeline_model.model_id] = pipeline_model_path;
+        }
+      }
+    }
+  }
+  
+  // Return the main model path (original or compiled)
+  return main_model_path;
+}
+
 std::unique_ptr<OrtSession> Model::CreateSession(OrtEnv& ort_env, const std::string& model_filename, OrtSessionOptions* session_options) {
+
   if (auto model_data_it = config_->model_data_spans_.find(model_filename);
       model_data_it != config_->model_data_spans_.end()) {
     // If model data was provided, load the model from memory
@@ -1238,7 +1427,7 @@ std::unique_ptr<OrtSession> Model::CreateSession(OrtEnv& ort_env, const std::str
   }
 
   // Otherwise, load the model from the file system
-  return OrtSession::Create(ort_env, (config_->config_path / fs::path(model_filename)).c_str(), session_options);
+  return OrtSession::Create(ort_env, fs::path(model_filename).c_str(), session_options);
 }
 
 std::shared_ptr<Tokenizer> Model::CreateTokenizer() const {
