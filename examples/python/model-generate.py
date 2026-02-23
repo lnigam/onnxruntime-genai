@@ -55,6 +55,8 @@ def main(args):
 
     params = og.GeneratorParams(model)
     search_options = get_search_options(args)
+    # Generator batch_size must match number of prompts (config overlay already has batch_size for model build)
+    search_options["batch_size"] = len(prompts)
     params.set_search_options(**search_options)
     if args.verbose:
         print(f"GeneratorParams created: {search_options}")
