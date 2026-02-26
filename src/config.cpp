@@ -233,6 +233,8 @@ struct CompileOptions_Element : JSON::Element {
   void OnValue(std::string_view name, JSON::Value value) override {
     if (name == "enable_ep_context") {
       v_.enable_ep_context = JSON::Get<bool>(value);
+    } else if (name == "force_compile_if_needed") {
+      v_.force_compile_if_needed = JSON::Get<bool>(value);
     } else if (name == "graph_optimization_level") {
       v_.graph_optimization_level = static_cast<GraphOptimizationLevel>(JSON::Get<double>(value));
     } else if (name == "ep_context_file_path") {

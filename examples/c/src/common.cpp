@@ -237,11 +237,13 @@ void RegisterEP(const std::string& ep, const std::string& ep_path) {
   }
 
   std::cout << "Registering execution provider: " << ep_path << std::endl;
-  auto env = Ort::Env();
+  // Register on the same OrtEnv that GenAI uses (GetOrtEnv()), so that GetEpDevices()
+  // in ValidateCompiledModel and elsewhere sees the plugin EP. Using Ort::Env() would
+  // register on a different env and only CPU would be visible to GenAI.
   if (ep.compare("cuda") == 0) {
-    env.RegisterExecutionProviderLibrary("CUDAExecutionProvider", std::filesystem::path(ep_path).c_str());
+    OgaRegisterExecutionProviderLibrary("CUDAExecutionProvider", ep_path.c_str());
   } else if (ep.compare("NvTensorRtRtx") == 0) {
-    env.RegisterExecutionProviderLibrary("NvTensorRTRTXExecutionProvider", std::filesystem::path(ep_path).c_str());
+    OgaRegisterExecutionProviderLibrary("NvTensorRTRTXExecutionProvider", ep_path.c_str());
   } else {
     std::cout << "Warning: EP registration not supported for " << ep << std::endl;
     std::cout << "Only 'cuda' and 'NvTensorRtRtx' support plug-in libraries." << std::endl;

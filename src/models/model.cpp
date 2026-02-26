@@ -1233,26 +1233,85 @@ std::unique_ptr<OrtModelCompilationOptions> Model::CreateModelCompilationOptions
   return std::unique_ptr<OrtModelCompilationOptions>(p);
 }
 
-bool Model::ValidateCompiledModel(const fs::path& compiled_model_path) {
-  // TODO: Implement actual validation logic
-  // For now, always return true if file exists
-  return true;
+bool Model::ValidateCompiledModel(OrtEnv& ort_env, const fs::path& compiled_model_path, bool force_compile_if_needed) {
+  const std::string ep_name = EPContextSupportedProviders(p_device_->GetType());
+  // EP context applicability already checked in CompileModel; ep_name is non-empty here.
+
+  Ort::Allocator& alloc = Ort::Allocator::GetWithDefaultOptions();
+  char* compat_info = nullptr;
+  OrtStatus* st = Ort::api->GetCompatibilityInfoFromModel(
+      compiled_model_path.c_str(), ep_name.c_str(), &alloc, &compat_info);
+  if (st != nullptr) {
+    Ort::api->ReleaseStatus(st);
+    return false;  // Error reading model (e.g. invalid file) -> recompile
+  }
+  // Context valid only if compatibility info is present for this EP
+  if (compat_info == nullptr) {
+    return false;
+  }
+  std::string compat_str(compat_info);
+  Ort::api->AllocatorFree(&alloc, compat_info);
+
+  const OrtEpDevice* const* devices = nullptr;
+  size_t num_devices = 0;
+  st = Ort::api->GetEpDevices(&ort_env, &devices, &num_devices);
+  if (st != nullptr) {
+    Ort::api->ReleaseStatus(st);
+    return false;  // Cannot enumerate devices -> recompile to be safe
+  }
+
+  const OrtEpDevice* ep_device = nullptr;
+  for (size_t i = 0; i < num_devices; ++i) {
+    const char* device_ep = Ort::api->EpDevice_EpName(devices[i]);
+    if (device_ep && std::string(device_ep) == ep_name) {
+      ep_device = devices[i];
+      break;
+    }
+  }
+  if (ep_device == nullptr) {
+    return false;  // No matching EP device -> all other cases return false
+  }
+
+  OrtCompiledModelCompatibility status = OrtCompiledModelCompatibility_EP_NOT_APPLICABLE;
+  OrtStatus* result = Ort::api->GetModelCompatibilityForEpDevices(&ep_device, 1, compat_str.c_str(), &status);
+  if (result != nullptr) {
+    Ort::api->ReleaseStatus(result);
+    return false;  // API error -> recompile
+  }
+  // EPContext is valid and optimal, no need to recompile
+  if (status == OrtCompiledModelCompatibility_EP_SUPPORTED_OPTIMAL) {
+    return true;
+  }
+  if (status == OrtCompiledModelCompatibility_EP_UNSUPPORTED) {
+    return false;  // Context not compatible with this EP -> recompile
+  }
+  if (status == OrtCompiledModelCompatibility_EP_SUPPORTED_PREFER_RECOMPILATION) {
+    if (force_compile_if_needed) {
+      Log("info", "Found existing EP Context for " + ep_name + " but performance is sub-optimal; Force compile is enabled, going to recompile EPContext.");
+      return false;
+    }
+    Log("warning", "Found existing EP Context for " + ep_name + " but its performance is sub-optimal in this EP, recommended to recompile EPContext.");
+    return true;
+  }
+
+  return false;  // NOT_APPLICABLE or unknown
 }
 
-bool Model::CheckCompiledModelExists(const std::string& model_filename, 
-                                      const Config::CompileOptions& compile_options,
+bool Model::CheckCompiledModelExists(OrtEnv& ort_env,
+                                    const std::string& model_filename, 
+                                      const Config::CompileOptions& compile_options_config,
                                       fs::path& out_compiled_model_path) {
   // Get output directory (default: "contexts")
   std::string output_dir = "contexts";
-  if (compile_options.ep_context_file_path.has_value() && !compile_options.ep_context_file_path.value().empty()) {
-    output_dir = compile_options.ep_context_file_path.value();
+  if (compile_options_config.ep_context_file_path.has_value() && !compile_options_config.ep_context_file_path.value().empty()) {
+    output_dir = compile_options_config.ep_context_file_path.value();
   }
   fs::path output_directory = config_->config_path / output_dir;
   
   // Get output filename (default: {model_name}_{ep_name}_ctx.onnx)
   std::string output_filename;
-  if (compile_options.ep_context_model_name.has_value() && !compile_options.ep_context_model_name.value().empty()) {
-    output_filename = compile_options.ep_context_model_name.value();
+  if (compile_options_config.ep_context_model_name.has_value() && !compile_options_config.ep_context_model_name.value().empty()) {
+    output_filename = compile_options_config.ep_context_model_name.value();
   } else {
     // Extract model name without extension
     std::string model_name = model_filename;
@@ -1275,9 +1334,10 @@ bool Model::CheckCompiledModelExists(const std::string& model_filename,
   if (!fs::exists(out_compiled_model_path)) {
     return false;  // File doesn't exist, need to compile
   }
-  
-  // Validate the compiled model
-  return ValidateCompiledModel(out_compiled_model_path);
+
+  // Validate the compiled model (EP compatibility)
+  const bool force_compile = compile_options_config.force_compile_if_needed.value_or(false);
+  return ValidateCompiledModel(ort_env, out_compiled_model_path, force_compile);
 }
 
 std::string Model::CompileModel(OrtEnv& ort_env, const std::string& model_filename, OrtSessionOptions* session_options, 
@@ -1296,7 +1356,13 @@ std::string Model::CompileModel(OrtEnv& ort_env, const std::string& model_filena
     fs::path full_path = config_->config_path / model_filename;
     return full_path.string();
   }
-  
+
+  // EP Context is only applicable for certain EPs (e.g. NvTensorRTRTX); if not applicable, use original model
+  if (EPContextSupportedProviders(p_device_->GetType()).empty()) {
+    fs::path full_path = config_->config_path / model_filename;
+    return full_path.string();
+  }
+
   // Helper lambda to configure and compile a model
   auto compile_model_helper = [this, &ort_env](OrtModelCompilationOptions* compilation_options, 
                                                 const std::string& model_filename,
@@ -1323,7 +1389,7 @@ std::string Model::CompileModel(OrtEnv& ort_env, const std::string& model_filena
     
     // Check if compiled model already exists and is valid
     fs::path compiled_model_path;
-    if (CheckCompiledModelExists(model_filename, comp_opts, compiled_model_path)) {
+    if (CheckCompiledModelExists(ort_env, model_filename, comp_opts, compiled_model_path)) {
       // Compiled model exists and is valid, return compiled path
       return compiled_model_path.string();
     }

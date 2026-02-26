@@ -167,6 +167,18 @@ struct Model : std::enable_shared_from_this<Model>, LeakChecked<Model>, External
 
   bool IsPruned() const;
 
+  /** \brief Returns the ORT execution provider name for the given device type if it supports EP context; empty string otherwise.
+   * If EP Context is enabled for any provider, please add the provider name here.
+   */
+  static std::string EPContextSupportedProviders(DeviceType device_type) {
+    switch (device_type) {
+      case DeviceType::NvTensorRtRtx:
+        return "NvTensorRTRTXExecutionProvider";
+      default:
+        return "";
+    }
+  }
+
   /** \brief Compiles the specified model and optionally all pipeline models
    *
    * Creates compilation options from session options and compiles the models.
@@ -198,21 +210,28 @@ struct Model : std::enable_shared_from_this<Model>, LeakChecked<Model>, External
  private:
   /** \brief Checks if a compiled model exists and is valid
    *
+   * \param ort_env OrtEnv (used for EP device / compatibility validation)
    * \param model_filename The original model filename
-   * \param compile_options The compile options (may contain output path)
+   * \param compile_options_config The compile options from config (output path, force_compile_if_needed, etc.)
    * \param out_compiled_model_path Output parameter for the compiled model path (default or from config)
    * \return true if compiled model exists and is valid, false otherwise
    */
-  bool CheckCompiledModelExists(const std::string& model_filename,
-                                const Config::CompileOptions& compile_options,
+  bool CheckCompiledModelExists(OrtEnv& ort_env,
+                                const std::string& model_filename,
+                                const Config::CompileOptions& compile_options_config,
                                 fs::path& out_compiled_model_path);
 
-  /** \brief Validates a compiled model (placeholder, currently always returns true)
+  /** \brief Validates a compiled model using EP compatibility APIs.
+   * Context is valid only if: (1) compatibility info is present for this EP, and
+   * (2) GetModelCompatibilityForEpDevices returns OPTIMAL or (PREFER_RECOMPILATION when force_compile_if_needed is false).
+   * All other cases return false.
    *
-   * \param compiled_model_path Path to the compiled model
-   * \return true if the compiled model is valid
+   * \param ort_env OrtEnv (for GetEpDevices)
+   * \param compiled_model_path Path to the compiled model file
+   * \param force_compile_if_needed If true, PREFER_RECOMPILATION is treated as invalid (recompile); if false, it is accepted as valid with a warning
+   * \return true if the compiled model is valid for the current EP (or validation not applicable)
    */
-  bool ValidateCompiledModel(const fs::path& compiled_model_path);
+  bool ValidateCompiledModel(OrtEnv& ort_env, const fs::path& compiled_model_path, bool force_compile_if_needed);
 
  public:
   std::unique_ptr<Config> config_;

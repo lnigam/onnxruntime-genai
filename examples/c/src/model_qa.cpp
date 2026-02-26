@@ -43,37 +43,6 @@ void CXX_API(
 
   if (verbose) std::cout << "Creating model..." << std::endl;
   auto model = OgaModel::Create(*config);
-  
-// Enable model compilation with all available compile options
-/*
-  config->Overlay(R"({
-    "model": {
-      "decoder": {
-        "compile_options": {
-          "enable_ep_context": true,
-          "graph_optimization_level": 99,
-          "ep_context_file_path": "ep_context",
-          "ep_context_model_name": "decoder_model",
-          "ep_context_embed_mode": true,
-          "flags": 0,
-          "external_initializers_file_path": "external_weights.bin",
-          "external_initializers_size_threshold": 1024
-        }
-      }
-    }
-  })");
-*/
-config->Overlay(R"({
-  "model": {
-    "decoder": {
-      "compile_options": {
-        "enable_ep_context": true,
-        "ep_context_embed_mode": false,
-        "graph_optimization_level": 99
-      }
-    }
-  }
-})");
 
   if (verbose) std::cout << "Creating tokenizer..." << std::endl;
   auto tokenizer = OgaTokenizer::Create(*model);
