@@ -1015,7 +1015,7 @@ std::vector<const char*> SessionInfo::GetOutputSymbolicShape(const std::string& 
 }
 
 Model::Model(std::unique_ptr<Config> config) : config_{std::move(config)} {
-  CreateSessionOptions();  
+  CreateSessionOptions(); 
   EnsureDeviceOrtInit(*p_device_, *config_, arena_cfg_);
 
   // Only CUDA, TRT-RTX, RyzenAI and DML does every input on the device

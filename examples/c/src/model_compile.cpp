@@ -129,7 +129,7 @@ void RunWithNvTensorRtRtxNoCompile(const std::string& model_path, const std::str
   PrintTimings("RunWithNvTensorRtRtxNoCompile (NvTensorRtRtx, no compile)", load_time, inference_time);
 }
 
-// 4) Run model with NvTensorRtRtx EP and 4 compile options.
+// 4) Run model with NvTensorRtRtx EP and minimum compile options.
 void RunWithNvTensorRtRtxMinimumCompileOptions(const std::string& model_path, const std::string& ep_path, bool verbose) {
   if (ep_path.empty() && verbose) {
     std::cout << "Warning: --ep_path not set; NvTensorRTRTX may not be available (only CPU)." << std::endl;
@@ -138,12 +138,13 @@ void RunWithNvTensorRtRtxMinimumCompileOptions(const std::string& model_path, co
   std::unordered_map<std::string, std::string> ep_options;
   GeneratorParamsArgs search_options;
   auto config = GetConfig(model_path, kNvTensorRtRtxEp, ep_options, search_options);
+  // ep_context_embed_mode must be false for larger models(>2GB) or compilation will error
   config->Overlay(R"({
     "model": {
       "decoder": {
         "compile_options": {
           "enable_ep_context": true,
-          "ep_context_embed_mode": false  // Must be false for larger models or compilation will error
+          "ep_context_embed_mode": false
         }
       }
     }
