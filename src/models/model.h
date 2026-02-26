@@ -188,7 +188,7 @@ struct Model : std::enable_shared_from_this<Model>, LeakChecked<Model>, External
    * - Reads compilation options from config.model.*.compile_options:
    *   * enable_ep_context - Controls whether model compilation is performed (default: not set, no compilation)
    *   * graph_optimization_level
-   *   * ep_context_file_path and ep_context_model_name
+   *   * ep_context_file_path - Full path (relative to config path) for compiled EP context model, e.g. "contexts/model_ctx.onnx"
    *   * ep_context_embed_mode - How EP context is stored (embedded vs external files)
    *   * flags
    *   * external_initializers_file_path and external_initializers_size_threshold

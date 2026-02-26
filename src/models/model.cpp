@@ -1301,34 +1301,22 @@ bool Model::CheckCompiledModelExists(OrtEnv& ort_env,
                                     const std::string& model_filename, 
                                       const Config::CompileOptions& compile_options_config,
                                       fs::path& out_compiled_model_path) {
-  // Get output directory (default: "contexts")
-  std::string output_dir = "contexts";
   if (compile_options_config.ep_context_file_path.has_value() && !compile_options_config.ep_context_file_path.value().empty()) {
-    output_dir = compile_options_config.ep_context_file_path.value();
-  }
-  fs::path output_directory = config_->config_path / output_dir;
-  
-  // Get output filename (default: {model_name}_{ep_name}_ctx.onnx)
-  std::string output_filename;
-  if (compile_options_config.ep_context_model_name.has_value() && !compile_options_config.ep_context_model_name.value().empty()) {
-    output_filename = compile_options_config.ep_context_model_name.value();
+    // Single path: full path (relative to config path) including filename, e.g. "contexts/model_ctx.onnx"
+    out_compiled_model_path = config_->config_path / compile_options_config.ep_context_file_path.value();
   } else {
-    // Extract model name without extension
+    // Default: "contexts/{model_name}_{ep_name}_ctx.onnx"
     std::string model_name = model_filename;
     size_t ext_pos = model_name.find_last_of('.');
     if (ext_pos != std::string::npos) {
       model_name = model_name.substr(0, ext_pos);
     }
-    
-    // Build output filename: {model_name}_{ep_name}_ctx.onnx
     std::string ep_name = to_string(p_device_->GetType());
     std::transform(ep_name.begin(), ep_name.end(), ep_name.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    output_filename = model_name + "_" + ep_name + "_ctx.onnx";
+    std::string output_filename = model_name + "_" + ep_name + "_ctx.onnx";
+    out_compiled_model_path = config_->config_path / "contexts" / output_filename;
   }
-  
-  // Combine directory and filename
-  out_compiled_model_path = output_directory / output_filename;
   
   // Check if the compiled model file exists
   if (!fs::exists(out_compiled_model_path)) {

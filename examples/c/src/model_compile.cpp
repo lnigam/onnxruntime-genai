@@ -21,11 +21,14 @@
 #include <chrono>
 #include <cstdlib>
 #include <csignal>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <string>
 
 #include "common.h"
+
+namespace fs = std::filesystem;
 
 // Enable ONNX Runtime verbose logging. Must be set before any Oga/ORT API use.
 // Alternatively set env ORTGENAI_ORT_VERBOSE_LOGGING=1 before launching.
@@ -187,21 +190,16 @@ void RunWithNvTensorRtRtxCompileAllOptions(const std::string& model_path, const 
   std::unordered_map<std::string, std::string> ep_options;
   GeneratorParamsArgs search_options;
   auto config = GetConfig(model_path, kNvTensorRtRtxEp, ep_options, search_options);
-  // ORT graph partitioner requires ep.context_file_path to be a *file* path (has .onnx extension),
-  // not a folder. So we use a directory for compile output and set session ep.context_file_path
-  // to a path with extension so validation passes.
+  // Single config: ep_context_file_path is full path (relative to model dir) including filename, e.g. "contexts/model_ctx.onnx"
   config->Overlay(R"({
     "model": {
       "decoder": {
         "compile_options": {
           "enable_ep_context": true,
           "graph_optimization_level": 99,
-          "ep_context_file_path": "",
-          "ep_context_model_name": "model_ctx.onnx",
+          "ep_context_file_path": "contexts/ep_context_output/model_ctx.onnx",
           "ep_context_embed_mode": false,
-          "flags": 0,
           "force_compile_if_needed": true
-
         }
       }
     }
@@ -228,9 +226,13 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  // Default EP path for NvTensorRTRTX in this example when not provided via --ep_path
-  if (ep_path.empty()) {
-    ep_path = R"(F:\epContext\24-02-26-validation\onnxruntime-genai\examples\c\build\Release\onnxruntime_providers_nv_tensorrt_rtx.dll)";
+  // If -e NvTensorRtRtx and --ep_path not set, default to current working directory + provider library name.
+  if (ep.compare("NvTensorRtRtx") == 0 && ep_path.empty()) {
+#if defined(_WIN32)
+    ep_path = (fs::current_path() / "onnxruntime_providers_nv_tensorrt_rtx.dll").string();
+#else
+    ep_path = (fs::current_path() / "libonnxruntime_providers_nv_tensorrt_rtx.so").string();
+#endif
   }
 
   // Enable ONNX Runtime verbose logs (global) before any Oga/ORT API is used.
@@ -264,7 +266,8 @@ int main(int argc, char** argv) {
     //RunWithCpuAndCompileOverlay(model_path, ep_path, verbose);
     RunWithNvTensorRtRtxNoCompile(model_path, ep_path, verbose);
     RunWithNvTensorRtRtxCompileFourOptions(model_path, ep_path, verbose);
-    RunWithNvTensorRtRtxCompileAllOptions(model_path, ep_path, verbose);
+    RunWithNvTensorRtRtxCompileFourOptions(model_path, ep_path, verbose);
+    //RunWithNvTensorRtRtxCompileAllOptions(model_path, ep_path, verbose);
   } catch (const std::exception& e) {
     std::cerr << "Error: " << e.what() << std::endl;
     return -1;

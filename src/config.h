@@ -103,8 +103,7 @@ struct Config {
     std::optional<bool> enable_ep_context;  // Whether to enable model compilation
     std::optional<bool> force_compile_if_needed;  // If true, treat PREFER_RECOMPILATION as invalid and recompile; if false, accept OPTIMAL or PREFER_RECOMPILATION as valid
     std::optional<GraphOptimizationLevel> graph_optimization_level;
-    std::optional<std::string> ep_context_file_path;  // Output directory path for compiled model (default: "contexts")
-    std::optional<std::string> ep_context_model_name;  // Output filename for compiled model (default: "{model_name}_{ep_name}_ctx.onnx")
+    std::optional<std::string> ep_context_file_path;  // Full path (relative to config path) for compiled EP context model, e.g. "contexts/model_ctx.onnx" (default: "contexts/{model_name}_{ep_name}_ctx.onnx")
     std::optional<bool> ep_context_embed_mode;
     std::optional<uint32_t> flags;
     std::optional<std::string> external_initializers_file_path;

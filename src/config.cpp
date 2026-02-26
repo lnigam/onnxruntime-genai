@@ -239,8 +239,6 @@ struct CompileOptions_Element : JSON::Element {
       v_.graph_optimization_level = static_cast<GraphOptimizationLevel>(JSON::Get<double>(value));
     } else if (name == "ep_context_file_path") {
       v_.ep_context_file_path = JSON::Get<std::string_view>(value);
-    } else if (name == "ep_context_model_name") {
-      v_.ep_context_model_name = JSON::Get<std::string_view>(value);
     } else if (name == "ep_context_embed_mode") {
       v_.ep_context_embed_mode = JSON::Get<bool>(value);
     } else if (name == "flags") {
