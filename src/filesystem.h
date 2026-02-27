@@ -223,7 +223,9 @@ inline bool create_directories(const path& p) {
   }
   
   // Create the directory with 0755 permissions
-  return mkdir(p.c_str(), 0755) == 0 || errno == EEXIST;
+  errno = 0;
+  int result = mkdir(p.c_str(), 0755);
+  return result == 0 || errno == EEXIST;
 #endif
 }
 

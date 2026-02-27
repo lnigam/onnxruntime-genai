@@ -1445,18 +1445,27 @@ std::string Model::CompileModel(OrtEnv& ort_env, const std::string& model_filena
   auto compilation_options = CreateModelCompilationOptions(ort_env, session_options);
   std::string main_model_path = compile_model_helper(compilation_options.get(), model_filename, compile_options);
 
-  // Additionally, compile all pipeline models if this is the primary session option
+  // Additionally, compile all pipeline models that have compile_options (if primary session option)
+  // Use explicit pipeline session_options when present, otherwise fallback to main session_options_
+  // (consistent with GetSessionOptions() at runtime).
   if (is_primary_session_option) {
     for (auto& pipeline_model : config_->model.decoder.pipeline) {
+      if (!pipeline_model.compile_options.has_value()) {
+        continue;
+      }
+      OrtSessionOptions* opts_to_use = nullptr;
       auto session_options_it = pipeline_session_options_.find(pipeline_model.model_id);
       if (session_options_it != pipeline_session_options_.end()) {
-        auto pipeline_compile_options = CreateModelCompilationOptions(ort_env, session_options_it->second.get());
-        if (pipeline_compile_options) {
-          std::string pipeline_model_path = compile_model_helper(pipeline_compile_options.get(), 
-                                                                  pipeline_model.filename,
-                                                                  pipeline_model.compile_options);
-          pipeline_compiled_model_paths_[pipeline_model.model_id] = pipeline_model_path;
-        }
+        opts_to_use = session_options_it->second.get();
+      } else {
+        opts_to_use = session_options;
+      }
+      auto pipeline_compile_options = CreateModelCompilationOptions(ort_env, opts_to_use);
+      if (pipeline_compile_options) {
+        std::string pipeline_model_path = compile_model_helper(pipeline_compile_options.get(),
+                                                                pipeline_model.filename,
+                                                                pipeline_model.compile_options);
+        pipeline_compiled_model_paths_[pipeline_model.model_id] = pipeline_model_path;
       }
     }
   }

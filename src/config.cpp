@@ -236,7 +236,11 @@ struct CompileOptions_Element : JSON::Element {
     } else if (name == "force_compile_if_needed") {
       v_.force_compile_if_needed = JSON::Get<bool>(value);
     } else if (name == "graph_optimization_level") {
-      v_.graph_optimization_level = static_cast<GraphOptimizationLevel>(JSON::Get<double>(value));
+      auto level = static_cast<int>(JSON::Get<double>(value));
+      if (level < ORT_DISABLE_ALL || level > ORT_ENABLE_ALL) {
+        throw std::runtime_error("Invalid graph_optimization_level value: " + std::to_string(level));
+      }
+      v_.graph_optimization_level = static_cast<GraphOptimizationLevel>(level);
     } else if (name == "ep_context_file_path") {
       v_.ep_context_file_path = JSON::Get<std::string_view>(value);
     } else if (name == "ep_context_embed_mode") {
